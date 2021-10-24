@@ -1,0 +1,447 @@
+---
+title: "Surviving on the Titanic"
+author: "Group 5"
+date: "7/17/2021"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Clearing environent and loading Libraries
+```{r loading libraries, message = FALSE}
+rm(list = ls())
+library(class) # a library with lots of classification tools
+library(kknn) # knn library
+library(tidyverse)
+library(corrplot)
+library(randomForest)
+library(ggplot2)
+library(ggthemes)
+library(gbm)
+library(rpart)
+```
+
+## Reading in the titanic data
+```{r loading data}
+#change the below line as per the file location on your computer
+#setwd("/Users/vishu_agarwal/Desktop/MSBA/2. Summer Sem/Intro to Machine Learning/Project/Data")
+setwd("/Users/kundra/Downloads/titanic")
+#There are blanks in some columns which we replace with NA while loading the data
+data <- read.csv("train.csv", na.strings = c("", "NA"), stringsAsFactors=T)
+```
+
+## Data Exploration
+
+```{r Data Structures}
+#checking what all does the data contain
+str(data)
+
+#dimension of training data 
+dim(data)
+
+
+#skipping variables - PassengerID, Name, Ticket since we do not think they would yield significant information
+
+#from the remaining variables, identifying categorical vs numerical variables 
+df_num <- data[, c("Age","SibSp","Parch","Fare")]
+df_cat <- data[, c("Survived","Pclass","Sex","Cabin","Embarked")]
+```
+
+
+```{r Data Exploration}
+#visualization of distribution of numerical variables 
+
+### Histogram of Age ###
+ggplot(data,aes(x = Age)) +
+  geom_histogram(binwidth = 5, color = "white", fill = "blue") +
+  labs(x = 'Age',title = "Histogram of Age", y = "# of Passengers") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_bin(binwidth=5, geom="text", aes(label=..count..), vjust=-0.5)+
+  ylim(c(0, 125)) +
+  theme_economist() + scale_color_economist()
+
+### Histogram of SibSp ####
+ggplot(data,aes(x = SibSp)) +
+  geom_histogram(binwidth = 1, color = "white", fill = "blue") +
+  labs(x = 'Total of Spouse/Siblings',title = "Histogram of Spouse/Siblings") +
+  ylab("# of Passengers")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_bin(binwidth=1, geom="text", aes(label=..count..), vjust=-0.5) +
+  ylim(c(0, 650)) +
+  theme_economist() + scale_color_economist()
+
+### Histogram of ParCh ####
+ggplot(data,aes(x = Parch)) +
+  geom_histogram(binwidth = 1, color = "white", fill = "blue") +
+  labs(x = 'Total of Parents/Children',title= "Histogram of Parents/Children") +
+  ylab("# of Passengers")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_bin(binwidth=1, geom="text", aes(label=..count..), vjust=-0.5) +
+  ylim(c(0, 125)) +
+  theme_economist() + scale_color_economist()
+
+### Histogram of Fare ####
+ggplot(data,aes(x = Fare)) +
+  geom_histogram(binwidth = 25, color = "white", fill = "blue") +
+  labs(x = 'Fare Paid - $',title= "Histogram of Fare") +
+  ylab("# of Passengers")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  stat_bin(binwidth=25, geom="text", aes(label=..count..), vjust=-0.5) +
+  ylim(c(0, 75)) +
+  theme_economist() + scale_color_economist()
+
+##visualization of survival tendency among different numerical variables  
+
+### 1.Survival by Age Group ###
+data$AgeGroup <- cut(data$Age, breaks=c(0,18,50,Inf),
+                      include.lowest=TRUE)
+ggplot(data, aes(x = AgeGroup, fill = factor(Survived))) +
+  geom_bar(position='fill') + 
+  ylab("Proportion") +
+  labs(x = 'Age Group',title = "Survival Rate by Age")+
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_discrete(name = "Outcome", labels = c("Died", "Survived"))
+summary(data$Age)
+summary(data$AgeGroup)
+
+### 2.Survival by Family Size ###
+data$Fam <- data$SibSp + data$Parch + 1
+data$FamGroup <- cut(data$Fam, breaks=c(0,1,4,Inf), 
+                      labels=c("Single","2 - 4","5 or more"))
+ggplot(data, aes(x = FamGroup, fill = factor(Survived))) +
+  geom_bar(position='fill') + 
+  ylab("Proportion") +
+  labs(x = 'Family Size', title = "Survival Rate by Family Size") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_discrete(name = "Outcome", labels = c("Died", "Survived"))
+
+summary(data$FamGroup)
+
+### 3.Survival by Fare ####
+data$FareGroup <- cut(data$Fare, breaks=c(0,5,10,50, Inf),
+                      include.lowest=TRUE,
+                      labels=c("5 or less", "(5, 10]", "(30,50]", "50 or more"))
+ggplot(data, aes(x = FareGroup, fill = factor(Survived))) +
+  geom_bar(position='fill') +
+  ylab("Proportion") +
+  labs(x = 'Fare in $', title = "Survival Rate by Fare") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_discrete(name = "Outcome", labels = c("Died", "Survived"))
+
+summary(data$FareGroup)
+
+#visualization of survival tendency among different categorical variables  
+
+### 1.Survival by Ticket Class ###
+ggplot(df_cat, aes(x=Pclass, fill = factor(df_cat$Survived))) +
+  geom_bar(position ="fill") +
+  ylab("Proportion") +
+  labs(x = 'Ticket Classes', title = "Survival Rate by Ticket Class") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_discrete(name = "Outcome", labels = c("Died", "Survived"))
+
+### 2.Survival by Gender ###
+ggplot(df_cat, aes(x=Sex, fill = factor(df_cat$Survived))) +
+  geom_bar(position="fill") +
+  ylab("Proportion") +
+  labs(x = 'Gender', title = "Survival Rate by Gender") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_discrete(name = "Outcome", labels = c("Died", "Survived"))
+
+### 3.Survival by Embarked City ###
+ggplot(df_cat, aes(x=Embarked, fill = factor(df_cat$Survived))) +
+  geom_bar(position="fill") +
+  ylab("Proportion") +
+  labs(x = 'Embarked City', title = "Survival Rate by Embarkation Location") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_discrete(name = "Outcome", labels = c("Died", "Survived"))
+
+```
+
+```{r Missing Value Imputation}
+# Treating columns with NA values
+
+#what all columns contain null and missing values
+colSums(is.na(data))
+
+## Age, Cabin and Embarked columns have NA values. We will treat Age and Cabin columns below. Embarked will not be treated since we have not used it in modeling 
+
+#for age column, we will replace NA with random values ranging from mean +_ standard deviation
+mean_age = mean(data$Age, na.rm= TRUE)
+sd_age = sd(data$Age, na.rm= TRUE)
+minimum_age = mean_age - sd_age
+maximum_age = mean_age + sd_age
+num_age <- sum(is.na(data$Age))
+indexMissingAge <- which(is.na(data$Age))
+data$Age[indexMissingAge] = runif(num_age, min = minimum_age, max=maximum_age)
+sum(is.na(data$Age))
+```
+
+
+
+##column "cabin" contains all possible cabin numbers (e.g. A1, A2, B1,B2, C25...). We extracted the first character from each value to identify the cabin type and plotted graphs to identify any survival trends among passengers of a particular cabin type
+unique(data$Cabin)
+data$Cabin <- substr(data$Cabin, 0, 1)
+ggplot(data, aes(x=data$Cabin, fill = factor(data$Survived))) +
+  geom_bar(position="fill") +
+  ylab("Proportion") +
+  labs(x = 'Cabins', title = "Survival Rate by Cabin") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_fill_discrete(name = "Outcome", labels = c("Died", "Survived"))
+
+#we see no particular trend of survival among different cabin types. Also, majority of the values in this column are NA. Hence, we will convert this variable into a binary one, with 1 representing cabin information was available and 0 representing cabin information was not available  
+
+#also cabin T is an outlier, since only 1 passenger belonged to cabin type T and did not survive
+data %>% filter(Cabin == 'T')
+
+data <- data %>%
+  mutate(cabin_bin = if_else(is.na(Cabin),0,1))
+
+ggplot(data, aes(factor(data$cabin_bin), fill = factor(data$cabin_bin))) +
+  geom_bar(position = position_dodge(preserve = "single")) + 
+  ylab("# of Passengers") +
+  labs(title = "Passengers with Cabin Assigned")+
+  theme(plot.title = element_text(hjust = 0.5),legend.position="none") +
+  scale_x_discrete(name = NULL, breaks = c("0","1"), labels = c("No Cabin Assigned", "Cabin Assigned"))
+```
+
+## Looking at the correlation matrix to identify any association between predictors
+```{r}
+#updating df_num with updated Age column
+df_num <- data[, c("Age","SibSp","Parch","Fare")]
+
+#calculating the correlation matrix among numerical variables to find any existing association between them 
+cor(df_num)
+
+#looking at the correlation matrix, we do not find any association among the numerical variables
+#Hence, we will build the model using all the numerical predictors 
+
+```
+
+## Building baisc tree model --> ~70% accuracy 
+
+```{r Tree Model}
+#changing survival to Survived/Dead
+data$Survived = ifelse (data$Survived == 1,"Survived","Dead")
+
+set.seed(6)
+str(data)
+x = data[,c(1,2,3,5,6,7,8,10)]
+ypred = data[,c(2)]
+train = sample(1:nrow(x), 600)
+x_train = x[train,]
+ypred_train = ypred[train]
+x_test = data[-train,]
+ypred_test = ypred[-train]
+
+##Using 'tree' library on R to find Decision Tree
+set.seed(2)
+library(tree)
+tree.x_train = tree(as.factor(Survived)~ Sex+Age+Pclass+SibSp+Parch+Fare, x, subset=train, mindev=.0001)
+tree.pred = predict(tree.x_train, x_test, type = 'class' )
+table(tree.pred, ypred_test)
+
+plot(tree.x_train,type="uniform")
+text(tree.x_train,col="blue",pretty=0, label=c("yval"),cex=.8)
+
+set.seed(2)
+cv.x_train = cv.tree(tree.x_train, ,FUN = prune.misclass)
+names(cv.x_train)
+
+plot(cv.x_train$size ,cv.x_train$dev ,type="b")
+plot(cv.x_train$k ,cv.x_train$dev ,type="b")
+
+# To improve accuracy, we prune the tree and keep only best nodes/leaves
+
+prune.x_train=prune.misclass(tree.x_train,best=11)
+
+plot(prune.x_train,type="uniform")
+text(prune.x_train, pretty=0, use.n=TRUE, all = TRUE,col="blue", cex=0.8)
+
+tree.pred=predict(prune.x_train, x_test,type="class")
+table(tree.pred , ypred_test)
+
+#Thus, we can see that the accuracy rate for this model is 84.8%
+
+##Using 'rpart' library on R to find Decision Tree
+set.seed(10)
+
+tree.x_train2 = rpart(Survived~.-PassengerId, method = 'class', x, subset=train, control = rpart.control(minsplit = 4, cp  = 0.0005))
+nbig = length(unique(tree.x_train2$where))
+cat('size of big tree : ',nbig,'\n')
+plotcp(tree.x_train2)
+
+printcp(tree.x_train2)
+tree.x_train2_pruned <- prune(tree.x_train2, cp=tree.x_train2$cptable[which.min(tree.x_train2$cptable[,"xerror"]),"CP"])
+
+plot(tree.x_train2, uniform = TRUE)
+text(tree.x_train2, pretty = 0, use.n=TRUE, all = TRUE,col="blue", cex=0.6)
+
+
+plot(tree.x_train2_pruned, uniform = TRUE)
+text(tree.x_train2_pruned, pretty = 0, use.n=TRUE, all = TRUE,col="blue", cex=0.6)
+
+tree.pred_2_pruned = predict(tree.x_train2_pruned, x_test, type = 'class' )
+
+table(tree.pred_2_pruned, ypred_test)
+
+#Thus, we can see that the accuracy rate for this mode is 84.5%
+```
+
+
+```
+## Using random forest technique
+```{r}
+set.seed(1)
+rf.x_train = randomForest(as.factor(Survived) ~ .-PassengerId, x[train,], mtry = 2, importance = TRUE)
+rf.x_train
+
+tree.pred_after_rf = predict(rf.x_train, x_test, type = 'class')
+table(tree.pred_after_rf, ypred_test)
+
+#Thus, we can see that the accuracy rate for this model is 82.8%
+
+varImpPlot(rf.x_train,type=2)
+
+#Thus, it can be seen that sex is the most important variable for predicting Survival followed by Fare and Age
+```
+
+# Boosting algorithm
+ 
+```{r}
+x_modified <- x
+x_modified$Sex <- as.factor(x_modified$Sex)
+ypred_test2 <- ypred_test
+ypred_test2 = ifelse(ypred_test2 == "Survived",1,0)
+x_test2 <- x_test
+x_test2$Survived = ifelse (x_test2$Survived == "Survived",1,0)
+x_test2$Sex <- as.factor(x_test2$Sex)
+x_modified$Survived = ifelse (data$Survived == "Survived",1,0)
+
+ 
+set.seed(1)
+boost.titanic = gbm(Survived ~.-PassengerId, data = x_modified[train,], distribution = "bernoulli", n.trees = 1000, shrinkage = 0.01)
+ 
+mPred2 = predict(boost.titanic, x_test2, type='response')
+ 
+mPred2 = ifelse (mPred2 > 0.6,1,0)
+table(mPred2, ypred_test2)
+
+#Thus, we can see that the accuracy rate for this model is 82.8%
+
+summary.gbm(boost.titanic)
+```
+
+
+# Logistic Regression
+
+```{r}
+set.seed(10)
+
+x_train_logr <- x_train
+x_train_logr$Sex <- ifelse(x_train_logr$Sex == "female",1,0)
+x_train_logr$Survived <- ifelse(x_train_logr$Survived == "Survived",1,0)
+
+x_test_logr <- x_test
+x_test_logr$Sex <- ifelse(x_test_logr$Sex == "female",1,0)
+x_test_logr$Survived <- ifelse(x_test_logr$Survived == "Survived",1,0)
+
+glm.fit = glm(Survived ~ .-PassengerId,data=x_train_logr,family=binomial)
+summary(glm.fit)
+
+coef(glm.fit)
+glm.probs=predict(glm.fit, x_test_logr, type="response")
+glm.pred = ifelse(glm.probs >.6, 1, 0)
+table(glm.pred, ypred_test)
+
+#We find that Parch variable (Parent-Child relationship) has least significance and hence remove it in the next iteration. 
+
+glm.fit2 = glm(Survived ~ .-PassengerId -Parch,data=x_train_logr,family=binomial)
+summary(glm.fit2)
+
+glm.probs2=predict(glm.fit2, x_test_logr, type="response")
+glm.pred2 = ifelse(glm.probs2 >.6, 1, 0)
+table(glm.pred2, ypred_test)
+
+#The removal of Parch variable leads to slight reduction in AIC although accuracy rate remains the same: 82.1%
+
+```
+
+# knn
+
+```{r}
+set.seed(3)
+
+#Feature scaling because the distance calculation done in KNN uses Euclidian Distance
+
+standardized.age=scale(x_train[,5])
+standardized.fare=scale(x_train[,8])
+
+x_train_knn <- cbind(x_train[,c(3,4,6,7)],standardized.age,standardized.fare)
+x_train_knn$Sex <- ifelse(x_train_knn$Sex == "female",1,0)
+
+standardized.age=scale(x_test[,6])
+standardized.fare=scale(x_test[,10])
+
+x_test_knn <- cbind(x_test[,c(3,5,7,8)],standardized.age,standardized.fare)
+x_test_knn$Sex <- ifelse(x_test_knn$Sex == "female",1,0)
+
+#Finding the optimum value of k to get minimum misclassification error
+
+n = dim(x_train_knn)[1]
+
+
+kcv = 10
+n0 = round(n/kcv,0)
+
+out_MSE = matrix(0,kcv,30)
+
+used = NULL
+set = 1:n
+
+set.seed(5)
+
+for(j in 1:kcv){
+ 
+  set.seed(123)
+  if(n0<length(set)){val = sample(set,n0)}
+  if(n0>=length(set)){val=set}
+ 
+  train_i = x_train_knn[-val,]
+  test_i = x_train_knn[val,]
+  ypred_train_i = ypred_train[-val]
+  ypred_test_i = ypred_train[val]
+ 
+  for(i in 1:30){
+ 
+  knn.pred=knn(train_i,test_i,ypred_train_i,k=i)
+  mis_class <- 100* (sum(knn.pred != ypred_test_i)/ length(ypred_test_i))
+  out_MSE[j,i] = mis_class
+   
+ 
+  }
+ 
+  used = union(used,val)
+  set = (1:n)[-used]
+ 
+  cat(j,'\n')
+}
+
+mMSE = apply(out_MSE,2,mean)
+par(mfrow=c(1,1))
+plot(log(1/(1:30)),mMSE,type="l",ylab="%Misclassification",col=4,lwd=2,main="Titanic Dataset (knn)",xlab="Complexity")
+best = which.min(mMSE)
+text(log(1/best),mMSE[best]+0.01,paste("k=",best))
+text(log(1/100)+0.4,mMSE[100],"k=100")
+text(log(1/1),mMSE[1]+0.001,"k=1")
+
+
+#Fitting the model to k = 11 (minimum misclassification error)
+
+knn.pred_kmin =knn(x_train_knn,x_test_knn,ypred_train,k=best)
+table(knn.pred_kmin,ypred_test)
+
+#Thus the accuracy of the model is 79.1%
